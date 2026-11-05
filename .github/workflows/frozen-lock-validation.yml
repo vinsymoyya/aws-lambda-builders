@@ -1,4 +1,4 @@
-name: Frozen lock export validation
+name: Locked export validation
 on:
   push:
     branches: [validation/uv-frozen-lock-export]
@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   checks:
-    name: ${{ matrix.os }} / uv ${{ matrix.uv }}
+    name: ${{ matrix.os }} / Python ${{ matrix.python }} / uv ${{ matrix.uv }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -14,19 +14,27 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         uv: ['0.11.26', latest]
+        python: ['3.13']
+        include:
+          - os: ubuntu-latest
+            uv: latest
+            python: '3.10'
     env:
       LAMBDA_BUILDERS_DEV: '1'
       BLACK_NUM_WORKERS: '2'
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: 202f389645834f577d046fb7ced2b36c4ec962b5
+          ref: 4145c4e8e28741f7a83d4a8421e7564746dafc6c
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python }}
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           version: ${{ matrix.uv }}
+      - name: Install target runtime for offline regression
+        if: matrix.python == '3.10'
+        run: uv python install 3.13
       - name: Install declared dependencies
         run: python -m pip install -e '.[dev]'
       - name: Lint
