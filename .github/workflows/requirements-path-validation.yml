@@ -1,0 +1,38 @@
+name: Requirements path validation
+on:
+  push:
+    branches: [validation/uv-local-paths]
+permissions:
+  contents: read
+jobs:
+  checks:
+    name: ${{ matrix.os }} / Python 3.13
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      LAMBDA_BUILDERS_DEV: '1'
+      BLACK_NUM_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 9e51371ccd60e0ba04c802b3723801b0329c839c
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: '0.11.26'
+      - name: Install declared dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Lint
+        run: python -m ruff check aws_lambda_builders
+      - name: Format
+        run: python -m black --check setup.py aws_lambda_builders tests --workers 2
+      - name: Unit and functional tests
+        run: python -m pytest -q --cov aws_lambda_builders --cov-report term-missing --cov-fail-under 94 tests/unit tests/functional
+      - name: UV integration tests
+        run: python -m pytest -q tests/integration/workflows/python_uv
