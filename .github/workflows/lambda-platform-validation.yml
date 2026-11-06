@@ -1,0 +1,58 @@
+name: Lambda platform validation
+on:
+  push:
+    branches: [validation/uv-lambda-platform]
+permissions:
+  contents: read
+jobs:
+  checks:
+    name: ${{ matrix.os }} / uv ${{ matrix.uv }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        uv: ['0.11.26', latest]
+    env:
+      LAMBDA_BUILDERS_DEV: '1'
+      BLACK_NUM_WORKERS: '2'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: 36a06755b50a615e9ebdc7eb568e5012665371ca
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: ${{ matrix.uv }}
+      - name: Install declared dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Verify regressions detect unchanged upstream
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+          source = Path('aws_lambda_builders/workflows/python_uv/packager.py')
+          original = source.read_bytes()
+          baseline = subprocess.check_output(['git', 'show', 'e3e14536501e38b0d6d8db582ddec6d0e0bd6f8a:aws_lambda_builders/workflows/python_uv/packager.py'])
+          try:
+              source.write_bytes(baseline)
+              result = subprocess.run([sys.executable, '-m', 'pytest', '-q', 'tests/integration/workflows/python_uv/test_python_uv.py', '-k', 'selects_lambda_compatible_wheel'], capture_output=True, text=True)
+              print(result.stdout)
+              print(result.stderr)
+              assert result.returncode == 1 and '8 failed' in result.stdout, 'Expected all eight upstream wheel-selection regressions to fail'
+          finally:
+              source.write_bytes(original)
+          PY
+      - name: Lint
+        run: python -m ruff check aws_lambda_builders
+      - name: Format
+        run: python -m black --check setup.py aws_lambda_builders tests --workers 2
+      - name: Unit and functional tests
+        run: python -m pytest -q --cov aws_lambda_builders --cov-report term-missing --cov-fail-under 94 tests/unit tests/functional
+      - name: UV integration tests
+        run: python -m pytest -q tests/integration/workflows/python_uv
